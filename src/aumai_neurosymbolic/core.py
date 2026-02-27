@@ -289,8 +289,37 @@ class KnowledgeCompiler:
         1
     """
 
-    _RULE_PATTERN = re.compile(r"^(.+?)\s*:-\s*(.+)\.$")
+    _RULE_PATTERN = re.compile(r"^(.+?)\s*:-\s*(.+?)\s*\.\s*(%.*)?$")
     _FACT_PATTERN = re.compile(r"^([^%][^:]*)\.$")
+
+    def _split_body(self, body_raw: str) -> list[str]:
+        """Split a rule body string on commas that are not inside parentheses.
+
+        Prevents naive splitting of multi-arg predicates like ``parent(X,Y)``
+        into ``["parent(X", "Y)"]``.
+
+        Args:
+            body_raw: Raw body string from a rule line, e.g. ``"parent(X,Y), mortal(X)"``.
+
+        Returns:
+            List of individual body literal strings with surrounding whitespace stripped.
+        """
+        parts: list[str] = []
+        depth = 0
+        current: list[str] = []
+        for char in body_raw:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append("".join(current).strip())
+                current = []
+                continue
+            current.append(char)
+        if current:
+            parts.append("".join(current).strip())
+        return [p for p in parts if p]
 
     def from_text(self, text: str) -> KnowledgeBase:
         """Parse Prolog-like text into a KnowledgeBase.
@@ -315,7 +344,7 @@ class KnowledgeCompiler:
                 rule_counter += 1
                 head = rule_match.group(1).strip()
                 body_raw = rule_match.group(2).strip()
-                body = [b.strip() for b in body_raw.split(",") if b.strip()]
+                body = self._split_body(body_raw)
 
                 # Extract confidence annotation if present: confidence=0.8
                 confidence = 1.0
